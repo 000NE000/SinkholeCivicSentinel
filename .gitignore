@@ -175,3 +175,5 @@ cython_debug/
 
 # Ignore raw data directory
 /data/raw/
+
+/src/utils/config.py

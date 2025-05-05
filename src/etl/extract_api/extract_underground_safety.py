@@ -16,6 +16,7 @@ import requests
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import shape
+from src.utils.config import API_CONFIG
 
 # ---------------------------------------------------------------------------
 # Operation registry & parameter specifications
@@ -243,3 +244,7 @@ def get_subsidence_accident_info(api_key: str, **params):
 # ---------------------------------------------------------------------------
 # End of module
 # ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    api_key = API_CONFIG["DATAGOKR_ENCODING_KEY"]
+    get_impact_evaluation_list(api_key, sysRegDateFrom = 20250101 , sysRegDateTo = 20250403)
