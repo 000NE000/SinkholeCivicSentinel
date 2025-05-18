@@ -29,6 +29,9 @@
 -- -- ================================================
 -- -- 2. 사고 상세 테이블
 -- -- ================================================
+
+
+
 -- CREATE TABLE IF NOT EXISTS subsidence_accident_info (
 --   sagoNo       VARCHAR(20)     PRIMARY KEY       REFERENCES subsidence_accident_list(sagoNo),
 --

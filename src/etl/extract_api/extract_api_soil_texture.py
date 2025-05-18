@@ -1,30 +1,34 @@
-#토양도
 import requests
 import geopandas as gpd
 from shapely.geometry import shape
+import numpy as np
 from src.utils.config import API_CONFIG
-from ydata_profiling import ProfileReport
-import os
-
-class VWorldAPIError(Exception):
-    """Raised when the vworld API returns an error status."""
-    pass
-
-import matplotlib.pyplot as plt
-
-plt.rcParams['font.family'] = ['AppleGothic', 'sans-serif']
-
 
 # VWorld가 지원하는 EPSG 코드 목록
 SUPPORTED_CRS = {
-    "4326": "WGS84",
-    "5179": "Korean_2000_TM"   # 중앙원점 38° … 토성도에서 지원
+    '4326': 'WGS84',
+    '5179': 'Korean_2000_TM'
 }
 
-
 def normalize_crs(crs: str) -> str:
-    code = crs.split(":")[-1]
-    return code if code in SUPPORTED_CRS else "4326"
+    code = crs.split(':')[-1]
+    return code if code in SUPPORTED_CRS else '4326'
+
+# BBox를 분할하는 유틸 함수
+
+def split_bbox(bbox, step_deg=0.1):
+    minx, miny, maxx, maxy = bbox
+    xs = np.arange(minx, maxx, step_deg)
+    ys = np.arange(miny, maxy, step_deg)
+    cells = []
+    for x0 in xs:
+        for y0 in ys:
+            cells.append((x0, y0, x0 + step_deg, y0 + step_deg))
+    return cells
+
+class VWorldAPIError(Exception):
+    """Raised when the VWorld API returns an error status."""
+    pass
 
 
 def fetch_soil_texture(
@@ -32,119 +36,97 @@ def fetch_soil_texture(
     bbox: tuple = None,
     emdCd: str = None,
     page_size: int = 1000,
-    crs: str = "EPSG:5186",
+    crs: str = 'EPSG:4326',
+    subdivide: bool = True
 ) -> gpd.GeoDataFrame:
-    base_url = "https://api.vworld.kr/req/data"
+    base_url = 'https://api.vworld.kr/req/data'
     crs_code = normalize_crs(crs)
-    params = {
-        "service": "data",
-        "version": "2.0",
-        "request": "GetFeature",
-        "key": api_key,
-        "format": "json",
-        "data": "LT_C_GIMSSCS",
-        "size": page_size,
-        "page": 1,
-        "geometry": "true",
-        "attribute": "true",
-        "crs": f"EPSG:{crs_code}",
+    target_crs = 'EPSG:5179'
+
+    # 공통 요청 파라미터
+    request_params = {
+        'service': 'data',
+        'version': '2.0',
+        'request': 'GetFeature',
+        'key': api_key,
+        'format': 'json',
+        'data': 'LT_C_GIMSSCS',
+        'size': page_size,
+        'geometry': 'true',
+        'attribute': 'true',
+        'crs': f'EPSG:{crs_code}',
     }
+
+    # Tile 단위 목록 생성
     if emdCd:
-        params["attrFilter"] = f"emdCd:=:{emdCd}"
+        tiles = [{'emdCd': emdCd}]
     elif bbox:
-        minx, miny, maxx, maxy = bbox
-        params["geomFilter"] = f"BOX({minx},{miny},{maxx},{maxy})"
+        if subdivide:
+            tiles = [{'bbox': cell} for cell in split_bbox(bbox, step_deg=0.1)]
+        else:
+            tiles = [{'bbox': bbox}]
     else:
-        raise ValueError("Either bbox or emdCd must be provided.")
+        raise ValueError('Either bbox or emdCd must be provided.')
 
-    all_records = []
-    while True:
-        resp = requests.get(base_url, params=params)
-        raw = resp.json()
-        # 1) "response" 래퍼가 있으면 꺼내고, 없으면 원본(raw) 그대로 사용
-        resp_data = raw.get("response", raw)
+    records = []
+    for tile in tiles:
+        params = request_params.copy()
+        if 'emdCd' in tile:
+            params['attrFilter'] = f"emdCd:={tile['emdCd']}"
+        else:
+            minx, miny, maxx, maxy = tile['bbox']
+            params['geomFilter'] = f"BOX({minx},{miny},{maxx},{maxy})"
 
-        status = resp_data.get("status")
-        if status == "NOT_FOUND":
-            # 빈 결과를 정상 처리
-            break
-        elif status != "OK":
-            err = resp_data.get("error", {})
-            raise VWorldAPIError(
-                f"API error {err.get('code', '<no code>')} "
-                f"(level {err.get('level', '<no level>')}): "
-                f"{err.get('text', '<no error text>')}"
-            )
+        page = 1
+        while True:
+            params['page'] = page
+            resp = requests.get(base_url, params=params)
+            raw = resp.json()
+            data = raw.get('response', raw)
 
-        # 2) result 키가 없으면 빈 dict, features 없으면 빈 리스트
-        result = resp_data.get("result", {})
-        features = result.get("featureCollection").get("features", [])
-        print(f"[DEBUG] Page {params['page']} returned {len(features)} features")
-        for feat in features:
-            print(f"[DEBUG] Processing feature id: {feat.get('id')}")
-            props = feat.get("properties", {})
-            geom = shape(feat.get("geometry", {}))
-            all_records.append({
-                "emd_cd": props.get("emdCd"),
-                "soil_group": props.get("legend"),
-                "geometry": geom
-            })
+            status = data.get('status')
+            if status == 'NOT_FOUND':
+                break
+            if status != 'OK':
+                err = data.get('error', {})
+                raise VWorldAPIError(
+                    f"API error {err.get('code','<no code>')}: {err.get('text','<no text>')}"
+                )
 
-        # page_info = raw.get("page", {})
-        if resp_data.get("page", {}).get("current", 0) >= resp_data["page"].get("total", 0):
-            break
-        params["page"] += 1
+            features = data.get('result', {}).get('featureCollection', {}).get('features', [])
+            for feat in features:
+                props = feat.get('properties', {})
+                geom = shape(feat.get('geometry', {}))
+                records.append({
+                    'emd_cd': props.get('emdCd'),
+                    'soil_group': props.get('legend'),
+                    'geometry': geom
+                })
 
-    if not all_records:  # nothing collected in any page
+            # 페이지 정보 파싱 및 정수 변환
+            page_info = data.get('page', {})
+            current = int(page_info.get('current', page))
+            total = int(page_info.get('total', page))
+            if current >= total:
+                break
+            page += 1
+
+    # 데이터프레임 생성
+    if not records:
         return gpd.GeoDataFrame(
-            columns=["emd_cd", "soil_group", "geometry"],
-            geometry="geometry",
-            crs=f"EPSG:{crs_code}"
+            columns=['emd_cd','soil_group','geometry'],
+            geometry='geometry',
+            crs=f'EPSG:{crs_code}'
         )
 
-    gdf = gpd.GeoDataFrame(all_records, geometry="geometry", crs=f"EPSG:{crs_code}")
-    if crs_code != "5186":
-        gdf = gdf.to_crs("EPSG:5186")
-    #
-    # prof_df = gdf.drop(columns="geometry")
-    # profile = ProfileReport(
-    #     prof_df,
-    #     title=f"SoilTexture Profile ({emdCd or 'bbox'})",
-    #     minimal=True
-    # )
-    # # 디렉터리 없으면 생성
-    # os.makedirs("../../../docs/profiles", exist_ok=True)
-    # # 파일명: soil_texture_emdCd.html 또는 soil_texture_bbox.html
-    # name_tag = emdCd if emdCd else "bbox"
-    # profile.to_file(f"../../../docs/profiles/soil_texture_{name_tag}.html")
+    gdf = gpd.GeoDataFrame(records, geometry='geometry', crs=f'EPSG:{crs_code}')
+    if crs_code != '5179':
+        gdf = gdf.to_crs(target_crs)
     return gdf
 
-# Example to see the real error message:
-if __name__ == "__main__":
+if __name__ == '__main__':
+    from src.utils.config import API_CONFIG
     bbox_wgs84 = (126.5, 37.2, 127.5, 37.8)
-    API_KEY = API_CONFIG["VWORLD_API_KEY"]
-    try:
-        df = fetch_soil_texture(API_KEY, bbox=bbox_wgs84, crs="EPSG:4326")
-        big_bbox = (126.4, 37.0, 127.6, 38.0)
-        print("Rows:", len(df))
-
-        print(df)  # prints all rows (or a truncated view)
-        print(df.shape)  # shows (n_rows, n_columns)
-        df4326 = df.to_crs("EPSG:4326")
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots(figsize=(10, 10))
-        df4326.plot(
-            column='soil_group',  # uses the 'soil_group' column for categories
-            categorical=True,  # treat values as discrete categories
-            legend=True,  # show a legend
-            ax=ax
-        )
-        ax.set_title("Soil Group Distribution")
-        ax.set_axis_off()  # hide axes for a cleaner map
-        ax.set_aspect('equal')  # ensure correct map proportions
-        plt.show()
-    except VWorldAPIError as e:
-        print("Caught VWorldAPIError:", e)
-    except Exception as e:
-        print(f"[WARN] Profiling failed: {e}")
+    df = fetch_soil_texture(API_CONFIG['VWORLD_API_KEY'], bbox=bbox_wgs84)
+    print('Rows:', len(df))
+    print(df.total_bounds)  # 서울 범위 내 확인

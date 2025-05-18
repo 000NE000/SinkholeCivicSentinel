@@ -11,6 +11,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
+      - ./data/raw:/data/raw
+    shm_size: 2gb                # shared memory size
 
 volumes:
   pgdata:
