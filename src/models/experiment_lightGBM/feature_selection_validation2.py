@@ -81,7 +81,6 @@ def add_kde_risk_score(df: gpd.GeoDataFrame, bandwidth=50, sample_size=10000) ->
     log(f"    - Min: {df['kde_risk_score'].min():.6f}")
     log(f"    - Max: {df['kde_risk_score'].max():.6f}")
     log(f"    - Mean: {df['kde_risk_score'].mean():.6f}")
-
     return df
 
 

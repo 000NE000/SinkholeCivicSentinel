@@ -94,19 +94,6 @@ def get_gnn_features(X):
 
 def select_candidates_with_uncertainty(model, X, proximity_feat="min_distance_to_sinkhole",
                                        percentile=80, uncertainty_topk=1000):
-    """
-    Select candidates for Stage 2 using both percentile cutoff and uncertainty
-
-    Args:
-        model: Stage 1 model
-        X: Feature matrix
-        proximity_feat: Name of proximity feature used in Stage 1
-        percentile: Percentile threshold for Stage 1 scores
-        uncertainty_topk: Number of most uncertain samples to include
-
-    Returns:
-        Array of indices for candidates
-    """
     # Get Stage 1 probabilities
     probs = model.predict_proba(X[[proximity_feat]])[:, 1]
 
@@ -492,10 +479,6 @@ class EnhancedTwoStageSinkholeScreener(TwoStageSinkholeScreener):
         return self.ensemble_weight * stage1_scores + (1 - self.ensemble_weight) * s2
 
 class EnhancedGraphSAGE(GraphSAGE):
-    """
-    Enhanced GraphSAGE implementation with better node feature utilization
-    """
-
     def __init__(self,
                  in_channels: int,
                  feature_weights: Optional[Dict[str, float]] = None,
@@ -567,9 +550,6 @@ class EnhancedGraphSAGE(GraphSAGE):
         return torch.sigmoid(x).view(-1)
 
 class EnhancedUncertaintyMaskedGraphSAGE(UncertaintyMaskedGraphSAGE):
-    """
-    Enhanced Uncertainty Masked GraphSAGE with improved feature utilization
-    """
 
     def __init__(self,
                  in_channels: int,

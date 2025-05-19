@@ -8,30 +8,7 @@ This script implements the full workflow for enhanced GNN screening:
 5. False negative analysis
 6. Hotspot identification and verification
 """
-import os
-import time
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from src.models.sinkhole_modeling.config import log, DEFAULT_K_VALS
-from src.models.sinkhole_modeling.data_loader import load_dataset, create_spatial_blocks
-from src.models.sinkhole_modeling.evaluation import compute_comprehensive_metrics
 
-# Import enhanced GNN implementation
-from enhanced_gnn import (
-    create_interaction_features,
-    visualize_uncertainty_sampling,
-    run_comparison_experiments,
-)
-
-# Import analysis functions
-from feature_importance import (
-    calculate_feature_importance,
-    plot_feature_importance,
-    run_ablation_study,
-    analyze_false_negatives,
-    identify_pothole_hotspots
-)
 
 
 
